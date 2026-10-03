@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { ChevronLeft, Copy, AlertCircle, UserX, Calendar, List, Trophy } from "lucide-react"
+import { ChevronLeft, Copy, AlertCircle, UserX, Calendar, List, Trophy, Save, Check, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { generateTournament } from "@/lib/tournament-generator"
 import { dynamicReseeding } from "@/lib/algorithms/reseeding/dynamicReseeding"
 import { postponeMatch } from "@/lib/algorithms/scheduling/postponement"
@@ -23,6 +24,49 @@ export default function FixtureDisplay({ teams, options, rankingType, onBack }) 
   const [schedule, setSchedule] = useState([])
   const [postponedMatches, setPostponedMatches] = useState({})
   const [originalScheduleDays, setOriginalScheduleDays] = useState({})
+  const [isSaving, setIsSaving] = useState(false)
+  const [savedId, setSavedId] = useState(null)
+
+  const handleSaveTournament = async () => {
+    setIsSaving(true)
+    try {
+      const tournamentName = window.prompt("Enter a name for this tournament:", `Tournament ${new Date().toLocaleDateString()}`)
+      if (!tournamentName) {
+        setIsSaving(false)
+        return
+      }
+
+      const res = await fetch("/api/tournaments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: tournamentName,
+          sportType: "General",
+          tournamentType: "Knockout",
+          status: "ONGOING",
+          isPublic: true,
+          algorithmOptions: options,
+          teams: teams.map((t, idx) => ({ name: t.name, seed: idx + 1, rating: t.ranking || 1000 })),
+          venues: Array.from({ length: options.numVenues || 1 }).map((_, i) => ({ name: `Court ${i + 1}`, courtNumber: i + 1 })),
+          fixtures: matches,
+          snapshotData: { teams, options, matches, schedule },
+        }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || "Failed to save tournament")
+      }
+
+      const data = await res.json()
+      setSavedId(data.tournament.id)
+      toast.success(`Tournament "${tournamentName}" saved to database!`)
+    } catch (err) {
+      toast.error(err.message || "Could not save tournament")
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -611,6 +655,32 @@ export default function FixtureDisplay({ teams, options, rankingType, onBack }) 
                         flexWrap: "wrap",
                       }}
                     >
+                      <button
+                        onClick={handleSaveTournament}
+                        disabled={isSaving}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          padding: "0.5rem 1rem",
+                          backgroundColor: savedId ? "#059669" : "#10b981",
+                          color: "white",
+                          borderRadius: "0.25rem",
+                          border: "none",
+                          fontWeight: "500",
+                          cursor: isSaving ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {isSaving ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : savedId ? (
+                          <Check size={16} />
+                        ) : (
+                          <Save size={16} />
+                        )}
+                        {savedId ? "Saved in History" : "Save Tournament"}
+                      </button>
+
                       <button
                         onClick={() => setShowWithdrawModal(true)}
                         style={{
